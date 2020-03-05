@@ -64,7 +64,7 @@ RCT_EXPORT_METHOD(pick:(NSDictionary *)options
     [composeRejecters addObject:reject];
     
     documentPicker.delegate = self;
-    documentPicker.modalPresentationStyle = UIModalPresentationFormSheet;
+    documentPicker.modalPresentationStyle = UIModalPresentationFullScreen;
     
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 110000
     if (@available(iOS 11, *)) {
@@ -82,47 +82,23 @@ RCT_EXPORT_METHOD(pick:(NSDictionary *)options
 
 - (NSMutableDictionary *)getMetadataForUrl:(NSURL *)url error:(NSError **)error
 {
-    __block NSMutableDictionary* result = [NSMutableDictionary dictionary];
+    NSMutableDictionary* result = [NSMutableDictionary dictionary];
+    [result setValue:[url lastPathComponent] forKey:FIELD_NAME];
+    [result setValue:@"123" forKey:FIELD_SIZE];
+    [result setValue:@"" forKey:FIELD_TYPE];
     
-    [url startAccessingSecurityScopedResource];
+    NSURL *tempURL = [NSURL fileURLWithPath:NSTemporaryDirectory()];
+    NSURL *newURL = [tempURL URLByAppendingPathComponent:url.lastPathComponent];
+    NSError *saveError = nil;
     
-    NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] init];
-    __block NSError *fileError;
-    
-    [coordinator coordinateReadingItemAtURL:url options:NSFileCoordinatorReadingResolvesSymbolicLink error:&fileError byAccessor:^(NSURL *newURL) {
-        
-        if (!fileError) {
-            [result setValue:newURL.absoluteString forKey:FIELD_URI];
-            [result setValue:[newURL lastPathComponent] forKey:FIELD_NAME];
-            
-            NSError *attributesError = nil;
-            NSDictionary *fileAttributes = [[NSFileManager defaultManager] attributesOfItemAtPath:newURL.path error:&attributesError];
-            if(!attributesError) {
-                [result setValue:[fileAttributes objectForKey:NSFileSize] forKey:FIELD_SIZE];
-            } else {
-                NSLog(@"%@", attributesError);
-            }
-            
-            if ( newURL.pathExtension != nil ) {
-                CFStringRef extension = (__bridge CFStringRef)[newURL pathExtension];
-                CFStringRef uti = UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, extension, NULL);
-                CFStringRef mimeType = UTTypeCopyPreferredTagWithClass(uti, kUTTagClassMIMEType);
-                CFRelease(uti);
-                
-                NSString *mimeTypeString = (__bridge_transfer NSString *)mimeType;
-                [result setValue:mimeTypeString forKey:FIELD_TYPE];
-            }
-        }
-    }];
-    
-    [url stopAccessingSecurityScopedResource];
-    
-    if (fileError) {
-        *error = fileError;
-        return nil;
-    } else {
-        return result;
+    if ([NSFileManager.defaultManager fileExistsAtPath:newURL.path]) {
+        [NSFileManager.defaultManager removeItemAtURL:newURL error:&saveError];
     }
+    
+    [NSFileManager.defaultManager moveItemAtURL:url toURL:newURL error:&saveError];
+    [result setValue:newURL.path forKey:FIELD_URI];
+    
+    return result;
 }
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentAtURL:(NSURL *)url
